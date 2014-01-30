@@ -11,7 +11,9 @@ def unicode_csv_reader(utf8_data, dialect=csv.excel, **kwargs):
 
 meps={}
 countries={}
+cmembers={}
 parties={}
+pmembers={}
 mepids={}
 mepnames={}
 for mep in json.load(open('data/ep_meps_current.json','r')):
@@ -21,6 +23,14 @@ for mep in json.load(open('data/ep_meps_current.json','r')):
                                'party': mep['Constituencies'][-1]['party']}
         mepnames[mep['Name']['full'].title()]={'country': mep['Constituencies'][-1]['country'],
                                                'party': mep['Constituencies'][-1]['party']}
+        try:
+            cmembers[mep['Constituencies'][-1]['country']]+=1
+        except KeyError:
+            cmembers[mep['Constituencies'][-1]['country']]=1
+        try:
+            pmembers[mep['Constituencies'][-1]['party']]+=1
+        except:
+            pmembers[mep['Constituencies'][-1]['party']]=1
 
 ############################################
 # lobbyplag
@@ -49,13 +59,13 @@ for c in lp_scores:
             parties[mepnames[mep.title()]['party']]['cnt']+=1
         except KeyError:
             parties[mepnames[mep.title()]['party']]={'pt': float(pt)/len(ams[c['uid']]['authors']),
-                                             'cnt': 1}
+                                                     'cnt': 1}
         try:
             countries[mepnames[mep.title()]['country']]['pt']+=float(pt)/len(ams[c['uid']]['authors'])
             countries[mepnames[mep.title()]['country']]['cnt']+=1
         except KeyError:
             countries[mepnames[mep.title()]['country']]={'pt': float(pt)/len(ams[c['uid']]['authors']),
-                                                 'cnt': 1}
+                                                         'cnt': 1}
 
 meps = {mep: {'privacy': v['pt']/v['cnt'],
               'total': v['pt']/v['cnt']}
@@ -121,11 +131,13 @@ for mep in memopol['objects']:
             countries[mepids[int(mep['ep_id'])]['country']] = mep['total_score'] / float(mep['max_score_could_have'])
 
 print '-------   countries   ------'
-for rank, (country, scores) in enumerate(sorted(countries.items(), key=itemgetter(1))):
-    print "%4d %s %.3f" % (rank+1, country.encode('utf8'), scores)
+#for rank, (country, scores) in enumerate(sorted(countries.items(), key=itemgetter(1))):
+for rank, (country, scores) in enumerate(sorted(countries.items(), key=lambda (k,v): v/cmembers[k])):
+    print "%4d %s %.3f (%.3f)" % (rank+1, country.encode('utf8'), scores/cmembers[country], scores)
 print '--------   parties   -------'
-for rank, (party, scores) in enumerate(sorted(parties.items(), key=itemgetter(1))):
-    print "%4d %s %.3f" % (rank+1, party.encode('utf8'), scores)
+#for rank, (party, scores) in enumerate(sorted(parties.items(), key=itemgetter(1))):
+for rank, (party, scores) in enumerate(sorted(parties.items(), key=lambda (k,v): v/pmembers[k])):
+    print "%4d %s %.3f (%.3f)" % (rank+1, party.encode('utf8'), scores/pmembers[party], scores, )
 print '---------   meps   ---------'
 for rank, (mep, scores) in enumerate(sorted(meps.items(), key=lambda (k,v): v['total'])):
     print "%4d %s %.3f\n\t" % (rank+1, mep.encode('utf8'), scores['total']),
