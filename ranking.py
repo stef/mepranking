@@ -3,6 +3,7 @@
 import json
 import csv
 from operator import itemgetter
+import match
 
 def unicode_csv_reader(utf8_data, dialect=csv.excel, **kwargs):
     csv_reader = csv.reader(utf8_data, dialect=dialect, **kwargs)
@@ -19,9 +20,11 @@ mepnames={}
 for mep in json.load(open('data/ep_meps_current.json','r')):
     if mep['Constituencies'][0]['start'] > '2009-07-13T00:00:00':
         mepids[mep['UserID']]={'name': mep['Name']['full'].title(),
+                               'mepid': mep['UserID'],
                                'country': mep['Constituencies'][-1]['country'],
                                'party': mep['Constituencies'][-1]['party']}
         mepnames[mep['Name']['full'].title()]={'country': mep['Constituencies'][-1]['country'],
+                                               'mepid': mep['UserID'],
                                                'party': mep['Constituencies'][-1]['party']}
         try:
             cmembers[mep['Constituencies'][-1]['country']]+=1
@@ -68,6 +71,9 @@ for c in lp_scores:
                                                          'cnt': 1}
 
 meps = {mep: {'privacy': v['pt']/v['cnt'],
+              'party': mepnames[mep.title()]['party'],
+              'country': mepnames[mep.title()]['country'],
+              'mepid': mepnames[mep.title()]['mepid'],
               'total': v['pt']/v['cnt']}
         for mep, v in meps.items()}
 countries = {country: v['pt']/v['cnt']
@@ -94,6 +100,9 @@ for line in reader:
         meps[mep]['total']+=float(line[4])
     except KeyError:
         meps[mep] = {'climate':float(line[4]),
+                     'mepid': mepnames[mep.title()]['mepid'],
+                     'party': mepnames[mep.title()]['party'],
+                     'country': mepnames[mep.title()]['country'],
                      'total': float(line[4])}
 
     try:
@@ -117,6 +126,9 @@ for mep in memopol['objects']:
             meps[mepids[int(mep['ep_id'])]['name']]['total'] += mep['total_score'] / float(mep['max_score_could_have'])
         except KeyError:
             meps[mepids[int(mep['ep_id'])]['name']] = {'information': mep['total_score'] / float(mep['max_score_could_have']),
+                                                       'mepid': int(mep['ep_id']),
+                                                       'party': mepids[int(mep['ep_id'])]['party'],
+                                                       'country': mepids[int(mep['ep_id'])]['country'],
                                                        'total': mep['total_score'] / float(mep['max_score_could_have']),}
 
 
@@ -130,19 +142,61 @@ for mep in memopol['objects']:
         except KeyError:
             countries[mepids[int(mep['ep_id'])]['country']] = mep['total_score'] / float(mep['max_score_could_have'])
 
-print '-------   countries   ------'
-#for rank, (country, scores) in enumerate(sorted(countries.items(), key=itemgetter(1))):
-for rank, (country, scores) in enumerate(sorted(countries.items(), key=lambda (k,v): v/cmembers[k])):
-    print "%4d %s %.3f (%.3f)" % (rank+1, country.encode('utf8'), scores/cmembers[country], scores)
-print '--------   parties   -------'
-#for rank, (party, scores) in enumerate(sorted(parties.items(), key=itemgetter(1))):
-for rank, (party, scores) in enumerate(sorted(parties.items(), key=lambda (k,v): v/pmembers[k])):
-    print "%4d %s %.3f (%.3f)" % (rank+1, party.encode('utf8'), scores/pmembers[party], scores, )
-print '---------   meps   ---------'
+############################################
+# phillip morris
+
+csvfile = open("data/pm.csv")
+
+dialect = csv.Sniffer().sniff(csvfile.read(1024*64))
+csvfile.seek(0)
+reader = unicode_csv_reader(csvfile, dialect=dialect)
+headers = reader.next()
+for line in reader:
+    if not line[0].strip(): continue
+    if len([x for x in line[1:] if x.strip()]) == 0: continue
+    mep = ' '.join(line[0].strip().title().split(',')[::-1]).strip()
+    if mep not in mepnames:
+        mep = match.fuzzy_match(mep, mepnames.keys())[0]
+    score = (len([x for x in line[1:] if x == u'[RED]']) - len([x for x in line[1:] if x == u'[GREEN]']))/6.0
+
+    try:
+        meps[mep]['tobacco']=score
+        meps[mep]['total']+=score
+    except KeyError:
+        meps[mep] = {'tobacco': score,
+                     'mepid': mepnames[mep.title()]['mepid'],
+                     'party': mepnames[mep]['party'],
+                     'country': mepnames[mep]['country'],
+                     'total': score}
+
+    try:
+        parties[mepnames[mep]['party']] += score
+    except KeyError:
+        parties[mepnames[mep]['party']] = score
+
+    try:
+        countries[mepnames[mep]['country']] += score
+    except KeyError:
+        countries[mepnames[mep]['country']] = score
+
+
+tots=0
+print ', '.join(['mepid','total','climate','information','privacy','tobacco'])
 for rank, (mep, scores) in enumerate(sorted(meps.items(), key=lambda (k,v): v['total'])):
-    print "%4d %s %.3f\n\t" % (rank+1, mep.encode('utf8'), scores['total']),
-    for k,v in scores.items():
-        if k=='total': continue
-        print "%s %.3f" % (k, v),
-    else:
-        print
+    print '%s,%s,' % (scores['mepid'], scores['total']),
+    print ', '.join(["%s" % scores.get(k) for k in ['climate','information','privacy','tobacco']])
+    tots+=scores['total']
+#print '---------   meps   ---------'
+#print ', '.join(['rank','name','total','country','party','climate','information','privacy','tobacco'])
+#for rank, (mep, scores) in enumerate(sorted(meps.items(), key=lambda (k,v): v['total'])):
+#    print '%4d, "%s", %s, "%s", "%s",' % (rank+1, mep.encode('utf8'), scores['total'], scores['country'].encode('utf8'), scores['party'].encode('utf8')),
+#    print ', '.join(["%s" % scores.get(k) for k in ['climate','information','privacy','tobacco']])
+#print '\n-------   countries   ------'
+#print ', '.join(['rank','country','avg','total'])
+#for rank, (country, scores) in enumerate(sorted(countries.items(), key=lambda (k,v): v/cmembers[k])):
+#    print '%4d, "%s", %f, %f' % (rank+1, country.encode('utf8'), scores/cmembers[country], scores)
+#print '\n--------   parties   -------'
+#print ', '.join(['rank','party','avg','total'])
+#for rank, (party, scores) in enumerate(sorted(parties.items(), key=lambda (k,v): v/pmembers[k])):
+#    print '%4d, "%s", %f, %f' % (rank+1, party.encode('utf8'), scores/pmembers[party], scores, )
+print tots
